@@ -1,0 +1,192 @@
+FORMAT: 1A
+HOST: https://api.payments.service.gov.uk/
+
+# GOV.UK Pay Payment Authorisation
+
+The GOV.UK Pay Payment Authorisation API is an enhancement to the existing GOV.UK Pay API which allows services to submit the full Card PAN, CVV, Cardholder Name and Expiry Date via API in order to authorise a payment. This is particularly useful for services who operate PCI compliant IVR telephony systems and want to integrate both their digital payments and telephone payments with GOV.UK Pay.
+
+
+## Payments [/v1/payments]
+
+## Initiate a payment journey [POST]
+
+Create a new payment for the account associated to the Authorisation token. The Authorisation token needs to be specified in the 'authorization' header as 'authorization: Bearer YOUR_API_KEY_HERE'
+
++ Request (application/json)
+    + Attributes (CreatePaymentRequest)
+
++ Response 201 (application/json)
+
+        Created
+
+    + Attributes (PaymentWithAllLinks)
+
++ Response 400 
+
+        Bad request
+
++ Response 401 
+
+        Credentials are required to access this resource
+
++ Response 422 
+
+        Invalid attribute value: description. Must be less than or equal to 255 characters length
+
++ Response 500 
+
+        Downstream system error
+
+
+## Initiate a payment journey for API Authorisation [POST]
+
+Create a new payment for the account associated to the Authorisation token. The Authorisation token needs to be specified in the 'authorization' header as 'authorization: Bearer YOUR_API_KEY_HERE'
+
++ Request (application/json)
+    + Attributes (CreatePaymentForApiAuthRequest)
+
++ Response 201 (application/json)
+
+        Created
+
+    + Attributes (PaymentForApiAuthResponse)
+
++ Response 400 
+
+        Bad request
+
++ Response 401 
+
+        Credentials are required to access this resource
+
++ Response 422 
+
+        Invalid attribute value: description. Must be less than or equal to 255 characters length
+
++ Response 500 
+
+        Downstream system error
+
+## Payments [/auth]
+
+This will be hosted on a different subdomain at `https://auth.payments.service.gov.uk`.
+
+## Submit a payment for authorisation and capture [POST]
+
++ Request (application/json)
+
+    + Attributes
+        + `cardnumber`
+
++ Response 201 (application/json)
+
+        Created
+
+    + Attributes (PaymentWithAllLinks)
+
+# Data Structures
+
+
+## CreatePaymentRequest (object)
+The Payment Request Payload
+
+### Properties
++ `amount`: `12000` (number, required) - amount in pence
++ `reference`: `12345` (string, required) - payment reference
++ `description`: `New passport application` (string, required) - payment description
++ `return_url`: `https://service-name.gov.uk/transactions/12345` (string, required) - service return url
+
+
+## CreatePaymentForApiAuthRequest (object)
+The Payment Request Payload
+
+### Properties
++ `amount`: `12000` (number, required) - amount in pence
++ `reference`: `12345` (string, required) - payment reference
++ `description`: `New passport application` (string, required) - payment description
++ `authorisation_mode`: `moto_api` (enum[string], optional) - How you would like to authorise the payment
+
+        + Members
+            + `moto_api`
+            + `web` 
+
+## PaymentWithAllLinks (object)
+
+
+### Properties
++ `payment` (Payment, optional) 
++ `_links` (object, optional) - self,events and next links of a Payment
+
+
+## PaymentForApiAuthResponse (object)
+
+### Properties
++ `payment` (Payment, optional) 
++ `_links`
+    + `self` (paymentLink, optional) - self
+    + `auth_url_post` (paymentAuthPOSTLink, optional) - next_url_post
+    + `events` (paymentLink, optional) - events
+    + `refunds` (paymentLink, optional) - refunds
+    + `cancel` (paymentPOSTLink, optional) - cancel
+
+## Payment (object)
+
+
+### Properties
++ `amount`: `1200` (number, optional) 
++ `state`: `1200` (Payment state, optional) - A structure representing the current state of the payment in its lifecycle.
++ `description`: `Your Service Description` (string, optional) 
++ `reference`: `your-reference` (string, optional) 
++ `email`: `your email` (string, optional) 
++ `payment_id`: `hu20sqlact5260q2nanm0q8u93` (string, optional) 
++ `payment_provider`: `worldpay` (string, optional) 
++ `return_url`: `http://your.service.domain/your-reference` (string, optional) 
++ `created_date`: `1/21/2016 5:15:00 PM` (string, optional) 
++ `paymentType` (string, optional) 
+
+
+## Payment state (object)
+
+
+### Properties
++ `status`: `created` (string, required) - Current progress of the payment in its lifecycle
++ `finished`: `false` (boolean, required) - Whether the payment has finished
++ `message`: `User cancelled the payment` (string, required) - What went wrong with the Payment if it finished with an error - English message
++ `code`: `P010` (string, required) - What went wrong with the Payment if it finished with an error - error code
+
+## allLinksForAPayment (object)
+self,events and next links of a Payment
+
+### Properties
++ `self` (paymentLink, optional) - self
++ `next_url` (paymentLink, optional) - next_url
++ `next_url_post` (paymentPOSTLink, optional) - next_url_post
++ `events` (paymentLink, optional) - events
++ `refunds` (paymentLink, optional) - refunds
++ `cancel` (paymentPOSTLink, optional) - cancel
+
+
+## paymentLink (object)
+
+
+### Properties
++ `href`: `https://an.example.link/from/payment/platform` (string, optional) 
++ `method`: `GET` (string, optional) 
+
+## paymentPOSTLink (object)
+
+
+### Properties
++ `type`: `multipart/form-data` (string, optional) 
++ `params`: (object)
++ `href`: `https://auth.payments.service.gov.uk/auth/<secure_token>` (string, optional)
++ `method`: `POST` (string, optional) 
+
+## paymentAuthPOSTLink (object)
+
+### Properties
++ `type`: `multipart/form-data` (string, optional) 
++ `params`: (object)
+    + `continuation_token`: `18ru9832ur8923ru9u` (string) - single use token allowing an API call to be performed to carry out the authorisation
++ `href`: `https://auth.payments.service.gov.uk/auth/` (string, optional)
++ `method`: `POST` (string, optional) 
