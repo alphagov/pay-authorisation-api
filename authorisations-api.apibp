@@ -3,14 +3,43 @@ HOST: https://api.payments.service.gov.uk/
 
 # GOV.UK Pay Payment Authorisation
 
-The GOV.UK Pay Payment Authorisation API is an enhancement to the existing GOV.UK Pay API which allows services to submit the full Card PAN, CVV, Cardholder Name and Expiry Date via API in order to authorise a payment. This is particularly useful for services who operate PCI compliant IVR telephony systems and want to integrate both their digital payments and telephone payments with GOV.UK Pay.
+The GOV.UK Pay Payment Authorisation API is an enhancement to the existing
+GOV.UK Pay API which allows services to submit the full Card PAN, CVV,
+Cardholder Name and Expiry Date via API in order to authorise a payment. This
+is particularly useful for services who operate PCI compliant IVR telephony
+systems and want to integrate both their digital payments and telephone
+payments with GOV.UK Pay.
+
 
 
 ## Payments [/v1/payments]
 
-## Initiate a payment journey [POST]
+## Initiate a payment journey for API authorisation [POST]
 
-Create a new payment for the account associated to the Authorisation token. The Authorisation token needs to be specified in the 'authorization' header as 'authorization: Bearer YOUR_API_KEY_HERE'
+A new field can now be passed at payment creation time to specify how you intend the payment to be authorised.
+This can take one of two values:
+
+| authorisation_mode | How the interaction happens |
+|--------------------|-----------------------------|
+| `web` (default)    | Via a paying user interaction with GOV.UK Pay's payment pages |
+| `moto_api`         | By providing card details through an API call |
+
+The `web` option represents the existing means by which payments are authorised on Pay: we return 
+you a `next_url` to which the user should be redirected.
+
+The new option is `moto_api`.
+To use the `moto_api` mode for authorisation, your systems will by definition
+be processing sensitive cardholder data governed by PCI-DSS rules. Therefore 
+this mode of use is suitable only in certain circumstances. A common use case will be 
+service teams who have a PCI compliant call centre/IVR solution provided by the supplier,
+where you wish to integrate the IVR system with GOV.UK Pay for payment processing in addition
+to processing online payments via GOV.UK Pay.
+
+If you specify `authorisation_mode` as `moto_api`, then you no longer need to provide
+a `return_url` since there is no longer a user to return. In this case, the response
+will include a link called `auth_url_post`, which specifies a url and a `continuation_token`.
+These values should be used to compose your authorisation request.
+
 
 + Request (application/json)
     + Attributes (CreatePaymentRequest)
@@ -38,51 +67,50 @@ Create a new payment for the account associated to the Authorisation token. The 
         Downstream system error
 
 
-## Initiate a payment journey for API Authorisation [POST]
-
-Create a new payment for the account associated to the Authorisation token. The Authorisation token needs to be specified in the 'authorization' header as 'authorization: Bearer YOUR_API_KEY_HERE'
-
-+ Request (application/json)
-    + Attributes (CreatePaymentForApiAuthRequest)
-
-+ Response 201 (application/json)
-
-        Created
-
-    + Attributes (PaymentForApiAuthResponse)
-
-+ Response 400 
-
-        Bad request
-
-+ Response 401 
-
-        Credentials are required to access this resource
-
-+ Response 422 
-
-        Invalid attribute value: description. Must be less than or equal to 255 characters length
-
-+ Response 500 
-
-        Downstream system error
-
-## Payments [/auth]
-
-This will be hosted on a different subdomain at `https://auth.payments.service.gov.uk`.
+## Submit a payment for authorisation and capture [/auth]
 
 ## Submit a payment for authorisation and capture [POST]
 
+This endpoint does not require the standard API Bearer token provided to the
+`api.payments.service.gov.uk` endpoint.
+
+Instead it can only be used by generating a single-use token via the Create 
+payment endpoint (`POST /v1/payments`) and specifying the `api_mode` parameter 
+as `moto_api`.
+This will be hosted the subdomain at `https://auth.payments.service.gov.uk`.
+
+This endpoint will process the submitted payment details synchronously, and both authorise and capture
+the payment.
+Depending on the PSP this call can take 1-2 seconds, and sometimes longer in busy periods.
+Requests will timeout after 10 seconds. 
+Requests for a given `continuation_token` cannot be retried.
+
+Upon completion the payment will be in one of the following [states](https://docs.payments.service.gov.uk/api_reference/#status-and-finished):
+
+| State | Meaning |
+|-------|---------|
+| `success` | The payment was authorised successfully and sent for capture |
+| `failed` | Payment was unsuccessful. No money is taken (although the user may see an authorisation which will be reverted/cancelled). This could be due to a number of reasons, including timeout, insufficient funds, invalid card details. The failure reason is further indicated by the [`code` parameter](https://docs.payments.service.gov.uk/api_reference/#errors-caused-by-payment-statuses) in the response |
+| `error` | An unexpected error occurred either with the underlying PSP or with GOV.UK Pay. No money is taken. |
+
+
+
 + Request (application/json)
-
+    
+   
     + Attributes
-        + `cardnumber`
-
+        + `continuation_token`: `123abc123` (string, required) - the continuation token provided in the `auth_url_post` link member of the create payment API response
+        + `card_number`: `4242424242424242` (string) - 12-19 digits
+        + `cvc`: `123` (string) - 3-4 digits
+        + `expiry_date`: `02/09` (string) - 5 character string in MM/YY format
+        + `cardholder_name`: `Joanne Smith` (string, optional)
+        
 + Response 201 (application/json)
 
         Created
 
     + Attributes (PaymentWithAllLinks)
+
 
 # Data Structures
 
@@ -94,17 +122,7 @@ The Payment Request Payload
 + `amount`: `12000` (number, required) - amount in pence
 + `reference`: `12345` (string, required) - payment reference
 + `description`: `New passport application` (string, required) - payment description
-+ `return_url`: `https://service-name.gov.uk/transactions/12345` (string, required) - service return url
-
-
-## CreatePaymentForApiAuthRequest (object)
-The Payment Request Payload
-
-### Properties
-+ `amount`: `12000` (number, required) - amount in pence
-+ `reference`: `12345` (string, required) - payment reference
-+ `description`: `New passport application` (string, required) - payment description
-+ `authorisation_mode`: `moto_api` (enum[string], optional) - How you would like to authorise the payment
++ `authorisation_mode`: `moto_api` (enum[string], optional) - How you would like to authorise the payment. Defaults to `web`.
 
         + Members
             + `moto_api`
@@ -115,7 +133,12 @@ The Payment Request Payload
 
 ### Properties
 + `payment` (Payment, optional) 
-+ `_links` (object, optional) - self,events and next links of a Payment
++ `_links` (object, optional)
+    + `self` (paymentLink, optional) - self
+    + `auth_url_post` (paymentAuthPOSTLink, optional) - next_url_post
+    + `events` (paymentLink, optional) - events
+    + `refunds` (paymentLink, optional) - refunds
+    + `cancel` (paymentPOSTLink, optional) - cancel
 
 
 ## PaymentForApiAuthResponse (object)
@@ -135,6 +158,11 @@ The Payment Request Payload
 ### Properties
 + `amount`: `1200` (number, optional) 
 + `state`: `1200` (Payment state, optional) - A structure representing the current state of the payment in its lifecycle.
+        * `status`: `created` (string, required) - Current progress of the payment in its lifecycle
+        * `finished`: `false` (boolean, required) - Whether the payment has finished
+        * `message`: `User cancelled the payment` (string, required) - What went wrong with the Payment if it finished with an error - English message
+        * `code`: `P010` (string, required) - What went wrong with the Payment if it finished with an error - error code
+
 + `description`: `Your Service Description` (string, optional) 
 + `reference`: `your-reference` (string, optional) 
 + `email`: `your email` (string, optional) 
@@ -149,11 +177,6 @@ The Payment Request Payload
 
 
 ### Properties
-+ `status`: `created` (string, required) - Current progress of the payment in its lifecycle
-+ `finished`: `false` (boolean, required) - Whether the payment has finished
-+ `message`: `User cancelled the payment` (string, required) - What went wrong with the Payment if it finished with an error - English message
-+ `code`: `P010` (string, required) - What went wrong with the Payment if it finished with an error - error code
-
 ## allLinksForAPayment (object)
 self,events and next links of a Payment
 
