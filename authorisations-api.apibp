@@ -37,7 +37,7 @@ to processing online payments via GOV.UK Pay.
 
 If you specify `authorisation_mode` as `moto_api`, then you no longer need to provide
 a `return_url` since there is no longer a user to return. In this case, the response
-will include a link called `auth_url_post`, which specifies a url and a `continuation_token`.
+will include a link called `auth_url_post`, which specifies a url and a `one_time_token`.
 These values should be used to compose your authorisation request.
 
 
@@ -54,36 +54,43 @@ These values should be used to compose your authorisation request.
 
         Bad request
 
-+ Response 401 
++ Response 401
 
         Credentials are required to access this resource
 
-+ Response 422 
++ Response 422
 
-        Invalid attribute value: description. Must be less than or equal to 255 characters length
+        Missing mandatory attributes or invalid values.
+
+    + Attributes (paymentError)
+
++ Response 429
+
+        Too many requests.
+    + Attributes (errorResponse)
 
 + Response 500 
 
         Downstream system error
 
 
-## Submit a payment for authorisation and capture [/auth]
+## Submit a payment for authorisation and capture [/v1/auth]
 
 ## Submit a payment for authorisation and capture [POST]
 
 This endpoint does not require the standard API Bearer token provided to the
-`api.payments.service.gov.uk` endpoint.
+`https://publicapi.payments.service.gov.uk/v1/payments` endpoint.
 
 Instead it can only be used by generating a single-use token via the Create 
 payment endpoint (`POST /v1/payments`) and specifying the `api_mode` parameter 
-as `moto_api`.
-This will be hosted the subdomain at `https://auth.payments.service.gov.uk`.
+as `moto_api`. `auth_url_post` link from Create payment endpoint can be used to authorise
+and capture payment.
 
 This endpoint will process the submitted payment details synchronously, and both authorise and capture
 the payment.
 Depending on the PSP this call can take 1-2 seconds, and sometimes longer in busy periods.
 Requests will timeout after 10 seconds. 
-Requests for a given `continuation_token` cannot be retried.
+Requests for a given `one_time_token` cannot be retried.
 
 Upon completion the payment will be in one of the following [states](https://docs.payments.service.gov.uk/api_reference/#status-and-finished):
 
@@ -94,23 +101,35 @@ Upon completion the payment will be in one of the following [states](https://doc
 | `error` | An unexpected error occurred either with the underlying PSP or with GOV.UK Pay. No money is taken. |
 
 
-
 + Request (application/json)
     
    
     + Attributes
-        + `continuation_token`: `123abc123` (string, required) - the continuation token provided in the `auth_url_post` link member of the create payment API response
-        + `card_number`: `4242424242424242` (string) - 12-19 digits
-        + `cvc`: `123` (string) - 3-4 digits
-        + `expiry_date`: `02/09` (string) - 5 character string in MM/YY format
-        + `cardholder_name`: `Joanne Smith` (string, optional)
+        + `one_time_token`: `123abc123` (string, required) - the one time token provided in the `auth_url_post` link member of the create payment API response
+        + `card_number`: `4242424242424242` (string, required) - 12-19 digits
+        + `cvc`: `123` (string, required) - 3-4 digits
+        + `expiry_date`: `02/09` (string, required) - 5 character string in MM/YY format
+        + `cardholder_name`: `Joanne Smith` (string, required) - must not be longer than 255 characters
         
-+ Response 201 (application/json)
++ Response 204 (application/json)
 
-        Created
++ Response 400 (application/json)
 
-    + Attributes (PaymentWithAllLinks)
+        Invalid request. One time token is invalid or has been used
 
++ Response 402 (application/json)
+
+        Payment rejected
+
++ Response 422 (application/json)
+
+        Missing mandatory attributes or invalid values.
+
+    + Attributes (paymentError)
+
++ Response 500 (application/json)
+
+        Error authorising the payment. Check payment status before continuing.
 
 # Data Structures
 
@@ -200,16 +219,26 @@ self,events and next links of a Payment
 
 
 ### Properties
-+ `type`: `multipart/form-data` (string, optional) 
-+ `params`: (object)
-+ `href`: `https://auth.payments.service.gov.uk/auth/<secure_token>` (string, optional)
++ `href`: `https://publicapi.payments.service.gov.uk/v1/payments` (string, optional)
 + `method`: `POST` (string, optional) 
 
 ## paymentAuthPOSTLink (object)
 
 ### Properties
-+ `type`: `multipart/form-data` (string, optional) 
 + `params`: (object)
-    + `continuation_token`: `18ru9832ur8923ru9u` (string) - single use token allowing an API call to be performed to carry out the authorisation
-+ `href`: `https://auth.payments.service.gov.uk/auth/` (string, optional)
-+ `method`: `POST` (string, optional) 
+    + `one_time_token`: `18ru9832ur8923ru9u` (string) - single use token allowing an API call to be performed to carry out the authorisation
++ `href`: `https://publicapi.payments.service.gov.uk/v1/auth/` (string, optional)
++ `method`: `POST` (string, optional)
+
+## paymentError (object)
+
+### Properties
++ `code`: `P0102` (string)
++ `description`: `Invalid attribute value: amount. Must be less than or equal to 10000000"` (string)
++ `field`: `amount` (string, optional)
+
+## errorResponse (object)
+
+### Properties
++ `code`: `P0900` (string)
++ `description`: `Too many requests` (string)
